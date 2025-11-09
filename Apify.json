@@ -1,47 +1,35 @@
 import { Actor } from 'apify';
-import axios from 'axios';
+import { CheerioCrawler, Dataset } from 'crawlee';
 
 await Actor.init();
 
-console.log('🌑 GenesisHarvester booting inside Apify...');
+const { searchUrls = [] } = await Actor.getInput();
+const dataset = await Dataset.open();
 
-// Input schema (Apify will let you edit this in the dashboard)
-const input = await Actor.getInput() || {};
-const tags = input.tags || [
-    "clientacquisition",
-    "nocodeautomation",
-    "aiautomationtools",
-    "freelancetool"
-];
-const limit = input.limit || 200;
+const crawler = new CheerioCrawler({
+  async requestHandler({ request, $, body }) {
+    const platform = request.url.includes('instagram.com') ? 'Instagram' : 'LinkedIn';
+    const links = [];
 
-// Simulate scraping for each tag
-const leads = tags.map((tag, i) => ({
-    platform: "Instagram",
-    source_url: `https://www.instagram.com/explore/search/keyword/?q=%23${tag}`,
-    name: `Lead_${i + 1}`,
-    handle: `user_${i + 1}`,
-    bio: `Automation and growth specialist in ${tag}`,
-    tags: tag,
-    intent: "Automation & Freelance Growth",
-    follower_reach: Math.floor(Math.random() * 20000),
-    confidence_score: Math.floor(Math.random() * 20) + 80,
-    country_region: "Global",
-    verification_status: Math.random() > 0.5 ? "Verified" : "Unverified",
-    date_added: new Date().toISOString().split('T')[0],
-    tier: "Mid",
-    notes_offer_type: "Prompt buyer",
-    status: "Pending",
-    source: "Instagram",
-    engagement_score: Math.floor(Math.random() * 100),
-    pricing_tier: "Low",
-    requested_service: "AI automation setup",
-    offer_type: "Prompt Pack",
-}));
+    $('a').each((_, el) => {
+      const href = $(el).attr('href');
+      if (href && (href.includes('/p/') || href.includes('/in/'))) {
+        links.push(href.startsWith('http') ? href : `https://${platform.toLowerCase()}.com${href}`);
+      }
+    });
 
-// Store data in Apify dataset
-await Actor.pushData(leads);
+    for (const link of links.slice(0, 50)) {
+      await dataset.pushData({
+        platform,
+        source_url: link,
+        date_added: new Date().toISOString().split('T')[0],
+        status: 'Harvested',
+      });
+    }
+  },
+});
 
-console.log(`✅ ${leads.length} leads simulated & stored.`);
+const requests = searchUrls.map(url => ({ url }));
+await crawler.run(requests);
 
 await Actor.exit();
